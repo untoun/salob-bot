@@ -1,0 +1,443 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ───────── Enums ─────────
+
+enum AdminRole {
+  SUPER_ADMIN
+  ADMIN
+  MASTER
+}
+
+enum BookingStatus {
+  NEW
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  RESCHEDULED
+  NO_SHOW
+}
+
+enum SyncStatus {
+  SYNCED
+  SYNC_PENDING
+  SYNC_ERROR
+}
+
+enum SyncSource {
+  DB
+  SHEETS
+}
+
+enum NotificationType {
+  BOOKING_CONFIRMATION
+  REMINDER_24H
+  REMINDER_2H
+  BOOKING_CANCELLED
+  BOOKING_RESCHEDULED
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+enum QueueStatus {
+  PENDING
+  PROCESSING
+  DONE
+  FAILED
+}
+
+enum SyncAction {
+  UPSERT
+  STATUS_CHANGE
+}
+
+enum WebhookStatus {
+  RECEIVED
+  PROCESSED
+  FAILED
+}
+
+enum BotState {
+  IDLE
+  SELECT_CATEGORY
+  SELECT_SERVICE
+  OFFER_ADDON
+  SELECT_MASTER
+  SELECT_DATE
+  SELECT_TIME
+  ENTER_NAME
+  ENTER_PHONE
+  CONFIRM_BOOKING
+  BOOKING_CREATED
+  RESCHEDULE_DATE
+  RESCHEDULE_TIME
+  AI_CHAT
+  ASK_ADMIN
+  ADMIN_REPLY
+}
+
+enum ScheduleExceptionType {
+  DAY_OFF
+  VACATION
+  BREAK
+  CUSTOM_HOURS
+}
+
+enum PortfolioCategory {
+  HAIRCUTS
+  COLORING
+  MENS
+  STYLING
+  OTHER
+}
+
+// ───────── Bot users / clients ─────────
+
+model User {
+  id            String    @id @default(cuid())
+  maxUserId     BigInt    @unique
+  maxChatId     BigInt?
+  name          String?
+  username      String?
+  source        String? // payload deep-link
+  consentAt     DateTime? // согласие на обработку ПДн
+  blockedBot    Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  client        Client?
+  session       BotSession?
+  notifications Notification[]
+  events        AnalyticsEvent[]
+
+  @@index([source])
+}
+
+model Client {
+  id             String     @id @default(cuid())
+  userId         String?    @unique
+  user           User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  name           String
+  phone          String? // E.164, нормализованный
+  comment        String?
+  visitsCount    Int        @default(0)
+  cancelsCount   Int        @default(0)
+  lastVisitAt    DateTime?
+  anonymizedAt   DateTime? // удаление по запросу
+  lastSyncSource SyncSource @default(DB)
+  lastSyncedAt   DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  bookings       Booking[]
+
+  @@index([phone])
+}
+
+// ───────── Catalog ─────────
+
+model ServiceCategory {
+  id        String    @id @default(cuid())
+  name      String
+  sortOrder Int       @default(0)
+  active    Boolean   @default(true)
+  services  Service[]
+}
+
+model Service {
+  id          String          @id @default(cuid())
+  categoryId  String
+  category    ServiceCategory @relation(fields: [categoryId], references: [id])
+  name        String
+  description String?
+  priceRub    Int
+  priceFrom   Boolean         @default(false) // «от 3500 ₽»
+  durationMin Int
+  isAddon     Boolean         @default(false) // допродажа
+  active      Boolean         @default(true)
+  sortOrder   Int             @default(0)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  masters     MasterService[]
+  bookings    Booking[]
+
+  @@index([categoryId, active])
+}
+
+model Master {
+  id              String    @id @default(cuid())
+  name            String
+  phone           String?
+  bio             String?
+  experienceYears Int?
+  specialization  String?
+  photoUrl        String?
+  rating          Float?
+  active          Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  services        MasterService[]
+  schedules       Schedule[]
+  exceptions      ScheduleException[]
+  bookings        Booking[]
+  portfolio       Portfolio[]
+  admins          Admin[]
+}
+
+model MasterService {
+  masterId  String
+  serviceId String
+  master    Master  @relation(fields: [masterId], references: [id], onDelete: Cascade)
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([masterId, serviceId])
+}
+
+// Недельный график. weekday: 1=Пн … 7=Вс (ISO). Нет строки = выходной.
+// Минуты от начала суток в часовом поясе салона.
+model Schedule {
+  id            String @id @default(cuid())
+  masterId      String
+  master        Master @relation(fields: [masterId], references: [id], onDelete: Cascade)
+  weekday       Int
+  startMin      Int
+  endMin        Int
+  breakStartMin Int?
+  breakEndMin   Int?
+
+  @@unique([masterId, weekday])
+}
+
+// Исключения на конкретную дату: выходной, отпуск, доп. перерыв, особые часы.
+model ScheduleException {
+  id       String                @id @default(cuid())
+  masterId String
+  master   Master                @relation(fields: [masterId], references: [id], onDelete: Cascade)
+  date     DateTime              @db.Date // локальная дата салона
+  type     ScheduleExceptionType
+  startMin Int?
+  endMin   Int?
+  note     String?
+
+  @@index([masterId, date])
+}
+
+// ───────── Booking ─────────
+
+model Booking {
+  id             String        @id @default(cuid())
+  clientId       String
+  client         Client        @relation(fields: [clientId], references: [id])
+  masterId       String
+  master         Master        @relation(fields: [masterId], references: [id])
+  serviceId      String
+  service        Service       @relation(fields: [serviceId], references: [id])
+  addonServiceIds String[]
+  startsAt       DateTime // UTC
+  endsAt         DateTime // UTC
+  durationMin    Int
+  priceRub       Int
+  priceFrom      Boolean       @default(false)
+  status         BookingStatus @default(CONFIRMED)
+  comment        String?
+  source         String        @default("max_bot")
+
+  // Защита от двойной записи: заполняется только пока запись «живая»
+  // (NEW/CONFIRMED). При отмене/переносе -> NULL, слот освобождается.
+  // Формат: `${masterId}|${startsAt ISO}`. Пересечения разной длины
+  // дополнительно проверяются в транзакции под advisory lock мастера.
+  slotKey        String?       @unique
+
+  // Идемпотентность создания (например, id callback/сообщения MAX)
+  idempotencyKey String?       @unique
+  rescheduledFromId String?    @unique
+  rescheduledFrom Booking?     @relation("Reschedule", fields: [rescheduledFromId], references: [id])
+  rescheduledTo   Booking?     @relation("Reschedule")
+
+  syncStatus     SyncStatus    @default(SYNC_PENDING)
+  lastSyncSource SyncSource    @default(DB)
+  lastSyncedAt   DateTime?
+  sheetRowId     Int?
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  notifications  Notification[]
+
+  @@index([startsAt])
+  @@index([masterId, startsAt])
+  @@index([status])
+  @@index([clientId])
+  @@index([syncStatus])
+}
+
+// ───────── Marketing / content ─────────
+
+model Promotion {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  discountText String? // «-20%», «500 ₽»
+  conditions  String?
+  startsAt    DateTime
+  endsAt      DateTime
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@index([active, startsAt, endsAt])
+}
+
+model FAQ {
+  id        String  @id @default(cuid())
+  question  String
+  answer    String
+  keywords  String[]
+  sortOrder Int     @default(0)
+  active    Boolean @default(true)
+}
+
+model Portfolio {
+  id        String            @id @default(cuid())
+  masterId  String?
+  master    Master?           @relation(fields: [masterId], references: [id], onDelete: SetNull)
+  category  PortfolioCategory
+  imageUrl  String // только URL внешнего хранилища/CDN
+  caption   String?
+  sortOrder Int               @default(0)
+  active    Boolean           @default(true)
+  createdAt DateTime          @default(now())
+
+  @@index([category, active])
+}
+
+// ───────── Admin / audit ─────────
+
+model Admin {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  role         AdminRole @default(ADMIN)
+  masterId     String? // для роли MASTER
+  master       Master?   @relation(fields: [masterId], references: [id], onDelete: SetNull)
+  maxUserId    BigInt? // куда слать уведомления администратору в MAX
+  active       Boolean   @default(true)
+  failedLogins Int       @default(0)
+  tokenVersion Int       @default(0) // +1 = все выданные сессии недействительны
+  lockedUntil  DateTime?
+  createdAt    DateTime  @default(now())
+
+  auditLogs    AuditLog[]
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  adminId    String?
+  admin      Admin?   @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String
+  entityId   String?
+  meta       Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+// ───────── Infrastructure ─────────
+
+model BotSession {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  state     BotState @default(IDLE)
+  data      Json     @default("{}") // короткие id выбранных сущностей
+  updatedAt DateTime @updatedAt
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
+
+model Notification {
+  id          String             @id @default(cuid())
+  bookingId   String
+  booking     Booking            @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  userId      String?
+  user        User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  type        NotificationType
+  scheduledAt DateTime
+  sentAt      DateTime?
+  status      NotificationStatus @default(PENDING)
+  error       String?
+  attempts    Int                @default(0)
+
+  @@unique([bookingId, type])
+  @@index([status, scheduledAt])
+}
+
+model SyncQueue {
+  id            String      @id @default(cuid())
+  entityType    String // "booking" | "client" | ...
+  entityId      String
+  action        SyncAction
+  status        QueueStatus @default(PENDING)
+  attempts      Int         @default(0)
+  lastAttemptAt DateTime?
+  nextAttemptAt DateTime    @default(now())
+  error         String?
+  createdAt     DateTime    @default(now())
+  processedAt   DateTime?
+
+  @@index([status, nextAttemptAt])
+  @@index([entityType, entityId])
+}
+
+model WebhookEvent {
+  id          String        @id @default(cuid())
+  eventId     String        @unique // производный ключ идемпотентности
+  eventType   String
+  receivedAt  DateTime      @default(now())
+  processedAt DateTime?
+  status      WebhookStatus @default(RECEIVED)
+  payloadHash String
+  error       String?
+
+  @@index([receivedAt])
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model AnalyticsEvent {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  type      String // bot_started, service_selected, booking_created ...
+  data      Json?
+  createdAt DateTime @default(now())
+
+  @@index([type, createdAt])
+}
+
+// Ограничение частоты запросов (счётчик в окне). Хранится в БД: на Vercel нет общей памяти между инстансами.
+model RateLimit {
+  key         String   @id
+  windowStart DateTime @default(now())
+  count       Int      @default(0)
+}

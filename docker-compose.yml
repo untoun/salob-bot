@@ -1,0 +1,16 @@
+# ТОЛЬКО для локальной разработки: PostgreSQL. Production работает на Vercel + управляемом PostgreSQL (Neon).
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: salon
+      POSTGRES_PASSWORD: salon_dev_password
+      POSTGRES_DB: salon
+    ports:
+      - "5432:5432"
+    volumes:
+      - salon_pg:/var/lib/postgresql/data
+volumes:
+  salon_pg:
+# .env: DATABASE_URL=postgresql://salon:salon_dev_password@localhost:5432/salon
+#      DIRECT_URL=postgresql://salon:salon_dev_password@localhost:5432/salon

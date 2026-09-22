@@ -1,0 +1,11 @@
+node_modules
+.next
+.env
+.env.*
+!.env.example
+.vercel
+*.pem
+*.key
+google-service-account*.json
+coverage
+next-env.d.ts

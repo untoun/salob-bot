@@ -1,0 +1,48 @@
+{
+  "name": "salon-max-bot",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:seed": "tsx --env-file=.env prisma/seed.ts",
+    "postinstall": "prisma generate",
+    "max:setup": "tsx --env-file=.env scripts/max-setup.ts",
+    "admin:create": "tsx --env-file=.env scripts/create-admin.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.16.0",
+    "bcryptjs": "^3.0.0",
+    "googleapis": "^144.0.0",
+    "jose": "^6.0.0",
+    "luxon": "^3.5.0",
+    "next": "^15.5.0",
+    "openai": "^5.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "undici": "^7.0.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.2.0",
+    "@types/luxon": "^3.4.2",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "^15.5.0",
+    "prisma": "^6.16.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": "22.x"
+  }
+}
