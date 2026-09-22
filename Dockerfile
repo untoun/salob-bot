@@ -2,8 +2,11 @@ FROM node:22-bookworm-slim
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm ci
+COPY package.json ./
+
+# This repository currently has no package-lock.json, so npm ci cannot run here.
+# Use npm install for the first Bothost build, then commit a lockfile for reproducible builds.
+RUN npm install --no-audit --no-fund
 
 COPY . .
 
