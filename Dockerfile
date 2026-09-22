@@ -25,6 +25,11 @@ RUN npm install --no-audit --no-fund --ignore-scripts
 
 COPY . .
 
+# Next.js type-checking/build workers exceed Node's default ~512 MB heap on
+# Bothost. Keep the limit below a 1 GB container's total memory.
+ENV NODE_OPTIONS=--max-old-space-size=768
+ENV NEXT_TELEMETRY_DISABLED=1
+
 RUN npx prisma generate
 RUN npm run build
 # Fail the image build here instead of allowing a broken container to start.
