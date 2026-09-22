@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -H 0.0.0.0 -p ${PORT:-3000}",
-    "build": "prisma generate && next build",
+    "build": "prisma generate && NODE_OPTIONS='--max-old-space-size=768' next build",
     "start": "next start -H 0.0.0.0 -p ${PORT:-3000}",
     "start:bothost": "node scripts/bothost-start.mjs",
     "lint": "eslint .",
