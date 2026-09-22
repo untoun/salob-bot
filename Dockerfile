@@ -1,6 +1,13 @@
 FROM node:22-bookworm-slim
 
-WORKDIR /app
+# ВАЖНО: не /app! Bothost при старте контейнера монтирует /app поверх
+# образа исходниками из Git (это нужно для их встроенного редактора кода
+# и live-обновлений). Если собрать Next.js-приложение в /app, готовая
+# папка .next окажется скрыта этим bind mount'ом сразу после старта —
+# именно поэтому раньше падало "Could not find a production build in the
+# '.next' directory", хотя сборка внутри Docker-образа проходила успешно.
+# Поэтому весь проект живёт в /usr/src/app, вне зоны действия mount'а.
+WORKDIR /usr/src/app
 
 # Prisma requires OpenSSL at runtime and during client generation.
 RUN apt-get update \
