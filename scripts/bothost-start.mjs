@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 
 const port = process.env.PORT || '3000';
@@ -24,6 +25,14 @@ async function main() {
   try {
     await run('npx', ['prisma', 'generate']);
     await run('npx', ['prisma', 'migrate', 'deploy']);
+
+    // Some Bothost configurations run the start command in a fresh runtime
+    // container and do not retain the build layer. Build on startup if the
+    // production artifact is missing instead of starting a broken server.
+    if (!existsSync('.next/BUILD_ID')) {
+      console.log('Next production build is missing; running npm run build');
+      await run('npm', ['run', 'build']);
+    }
 
     const child = spawn('npx', ['next', 'start', '-H', host, '-p', port], {
       stdio: 'inherit',
