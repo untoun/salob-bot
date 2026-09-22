@@ -13,37 +13,23 @@ function run(command, args) {
     });
 
     child.on('exit', (code) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-      reject(new Error(`${command} ${args.join(' ')} exited with code ${code}`));
+      if (code === 0) resolve();
+      else reject(new Error(`${command} ${args.join(' ')} exited with code ${code}`));
     });
-
-    child.on('error', (error) => {
-      reject(error);
-    });
+    child.on('error', reject);
   });
 }
 
 async function main() {
   try {
-    console.log('> prisma generate');
     await run('npx', ['prisma', 'generate']);
-
-    console.log('> prisma migrate deploy');
     await run('npx', ['prisma', 'migrate', 'deploy']);
 
-    console.log(`> next start -H ${host} -p ${port}`);
     const child = spawn('npx', ['next', 'start', '-H', host, '-p', port], {
       stdio: 'inherit',
       env: process.env,
     });
-
-    child.on('exit', (code) => {
-      process.exit(code ?? 0);
-    });
-
+    child.on('exit', (code) => process.exit(code ?? 0));
     child.on('error', (error) => {
       console.error(error);
       process.exit(1);
